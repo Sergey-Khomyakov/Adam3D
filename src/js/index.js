@@ -57,12 +57,38 @@ class CanvasTride {
     init() {
         this.renderer.setSize(this.canvasWidth, this.canvasHeight);
         this.mainEl.appendChild(this.renderer.domElement);
-        
+
+        const manager = new THREE.LoadingManager(
+            // onLoad - вызывается когда все ресурсы загружены
+            () => {
+                this.remove3DLoadingIndicator();
+                this.animate();
+            },
+            // onProgress - отслеживаем общий прогресс
+            (url, itemsLoaded, itemsTotal) => {
+                const progress = itemsLoaded / itemsTotal;
+                this.update3DLoadingProgress(progress);
+                this.animate();
+            },
+            // onError - обработка ошибок
+            (url) => {
+                console.error("Ошибка загрузки ресурса:", url);
+    
+                if (this.loadingBar) {
+                    this.loadingBar.material.color.setHex(0xff0000); // Красный при ошибке
+                }
+    
+                this.remove3DLoadingIndicator();
+                
+                this.showTestCube();
+                this.animate();
+            }
+        );
+
         // Создаем 3D индикатор загрузки
         this.create3DLoadingIndicator();
 
-        
-        const gltfLoader = new GLTFLoader();
+        const gltfLoader = new GLTFLoader(manager);
 
         gltfLoader.load(
             modelUrl,
@@ -71,23 +97,12 @@ class CanvasTride {
                 this.normalizeModelSize();
                 console.log(this.dumpObject(this.model).join('\n'));
                 this.scene.add(this.model);
-
-                this.remove3DLoadingIndicator();
-                this.animate();
             },
-            (xhr) => {
-                debugger
-                const progress = xhr.loaded / xhr.total;
-                this.update3DLoadingProgress(progress);
-                this.animate();
-            },
+            // Индивидуальный прогресс для этого загрузчика не нужен,
+            // так как мы используем менеджер для отслеживания прогресса
+            undefined,
             (error) => {
                 console.error("Ошибка загрузки модели:", error);
-                
-                this.remove3DLoadingIndicator();
-                
-                this.showTestCube();
-                this.animate();
             }
         );
     }
@@ -230,7 +245,8 @@ class CanvasTride {
             color: 0x000000,
             transparent: true,
             opacity: 0.8,
-            side: THREE.DoubleSide // Рисуем с двух сторон
+            side: THREE.DoubleSide, // Рисуем с двух сторон
+            depthWrite: false
         });
         this.loadingBg = new THREE.Mesh(bgGeometry, bgMaterial);
     
@@ -240,13 +256,14 @@ class CanvasTride {
             color: 0x00ff00, // Зеленый для наглядности
             transparent: true,
             opacity: 1,
-            side: THREE.DoubleSide
+            side: THREE.DoubleSide,
+            depthWrite: false
         });
         this.loadingBar = new THREE.Mesh(barGeometry, barMaterial);
         this.loadingBar.scale.x = 0; // Начинаем с 0
     
-        this.loadingBg.position.set(0, 0, -3); // z = -3 (перед камерой)
-        this.loadingBar.position.set(0, 0, -2.9); // Чуть ближе к камере
+        this.loadingBg.position.set(0, 0, -1); // z = -3 (перед камерой)
+        this.loadingBar.position.set(0, 0, -0.9); // Чуть ближе к камере
     
         this.scene.add(this.loadingBg);
         this.scene.add(this.loadingBar);
@@ -254,7 +271,7 @@ class CanvasTride {
 
     update3DLoadingProgress(progress) {
         if (this.loadingBar) {
-            this.loadingBar.scale.x = progress;
+            this.loadingBar.scale.x = Math.min(1, Math.max(0, progress));
         }
     }
     
