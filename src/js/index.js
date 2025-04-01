@@ -58,24 +58,38 @@ class CanvasTride {
         this.renderer.setSize(this.canvasWidth, this.canvasHeight);
         this.mainEl.appendChild(this.renderer.domElement);
         
-        const gltfLoader = new GLTFLoader();
-        
-        gltfLoader.load(modelUrl, (gltf) => {
-            this.model = gltf.scene;
-            
-            // Центрируем модель
-            this.normalizeModelSize();
-            console.log(this.dumpObject(this.model).join('\n'));
-            this.scene.add(this.model);
-            this.animate();
+        // Создаем 3D индикатор загрузки
+        this.create3DLoadingIndicator();
 
-        }, undefined, (error) => {
-            console.error("Ошибка загрузки модели:", error);
-            
-            // Вместо модели покажем куб для теста
-            this.showTestCube();
-            this.animate();
-        });
+        
+        const gltfLoader = new GLTFLoader();
+
+        gltfLoader.load(
+            modelUrl,
+            (gltf) => {
+                this.model = gltf.scene;
+                this.normalizeModelSize();
+                console.log(this.dumpObject(this.model).join('\n'));
+                this.scene.add(this.model);
+
+                this.remove3DLoadingIndicator();
+                this.animate();
+            },
+            (xhr) => {
+                debugger
+                const progress = xhr.loaded / xhr.total;
+                this.update3DLoadingProgress(progress);
+                this.animate();
+            },
+            (error) => {
+                console.error("Ошибка загрузки модели:", error);
+                
+                this.remove3DLoadingIndicator();
+                
+                this.showTestCube();
+                this.animate();
+            }
+        );
     }
     normalizeModelSize() {
         if (!this.model) return;
@@ -208,6 +222,61 @@ class CanvasTride {
 		return lines;
 
 	}
+
+    create3DLoadingIndicator() {
+        const bgGeometry = new THREE.PlaneGeometry(2, 0.2); // Ширина 2, высота 0.2
+        const bgMaterial = new THREE.MeshBasicMaterial({ 
+            name: 'bgMaterial',
+            color: 0x000000,
+            transparent: true,
+            opacity: 0.8,
+            side: THREE.DoubleSide // Рисуем с двух сторон
+        });
+        this.loadingBg = new THREE.Mesh(bgGeometry, bgMaterial);
+    
+        const barGeometry = new THREE.PlaneGeometry(1.9, 0.15);
+        const barMaterial = new THREE.MeshBasicMaterial({
+            name: 'barMaterial',
+            color: 0x00ff00, // Зеленый для наглядности
+            transparent: true,
+            opacity: 1,
+            side: THREE.DoubleSide
+        });
+        this.loadingBar = new THREE.Mesh(barGeometry, barMaterial);
+        this.loadingBar.scale.x = 0; // Начинаем с 0
+    
+        this.loadingBg.position.set(0, 0, -3); // z = -3 (перед камерой)
+        this.loadingBar.position.set(0, 0, -2.9); // Чуть ближе к камере
+    
+        this.scene.add(this.loadingBg);
+        this.scene.add(this.loadingBar);
+    }
+
+    update3DLoadingProgress(progress) {
+        if (this.loadingBar) {
+            this.loadingBar.scale.x = progress;
+        }
+    }
+    
+    remove3DLoadingIndicator() {
+        if (!this.loadingBg || !this.loadingBar) return;
+        
+        // Анимация fade-out
+        const fadeOut = () => {
+            this.loadingBg.material.opacity -= 0.05;
+            this.loadingBar.material.opacity -= 0.05;
+            
+            if (this.loadingBg.material.opacity > 0) {
+                requestAnimationFrame(fadeOut);
+            } else {
+                this.scene.remove(this.loadingBg);
+                this.scene.remove(this.loadingBar);
+                this.loadingBg = null;
+                this.loadingBar = null;
+            }
+        };
+        fadeOut();
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
