@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import modelUrl from '/model/scene.gltf?url';
+import modelUrl from '/model/home__room.glb?url';
 
 class CanvasTride {
     constructor(mainEl) {
