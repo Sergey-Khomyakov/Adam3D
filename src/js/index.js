@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import modelUrl from '/model/home__room.glb?url';
+import modelUrl from '/model/cartoon_kitchen_interior.glb?url';
 
 class CanvasTride {
     constructor(mainEl) {
@@ -42,6 +42,13 @@ class CanvasTride {
         this.rotationSpeed = 0.01;
         this.scale = 1;
 
+        // Для хранения информации о модели
+        this.model = null;
+        this.modelGroup = null;
+        this.modelCenter = null;
+        this.currentHighlightedObject = null;
+        this.modelObjects = [];
+
         // Инициализация событий
         this.initEvents();
 
@@ -59,52 +66,184 @@ class CanvasTride {
         this.mainEl.appendChild(this.renderer.domElement);
 
         const manager = new THREE.LoadingManager(
-            // onLoad - вызывается когда все ресурсы загружены
             () => {
                 this.remove3DLoadingIndicator();
                 this.animate();
+                this.populateSelectWithObjects();
+                this.highlightFirstObject();
             },
-            // onProgress - отслеживаем общий прогресс
             (url, itemsLoaded, itemsTotal) => {
                 const progress = itemsLoaded / itemsTotal;
                 this.update3DLoadingProgress(progress);
                 this.animate();
             },
-            // onError - обработка ошибок
             (url) => {
                 console.error("Ошибка загрузки ресурса:", url);
-    
                 if (this.loadingBar) {
-                    this.loadingBar.material.color.setHex(0xff0000); // Красный при ошибке
+                    this.loadingBar.material.color.setHex(0xff0000);
                 }
-    
                 this.remove3DLoadingIndicator();
-                
                 this.showTestCube();
                 this.animate();
             }
         );
 
-        // Создаем 3D индикатор загрузки
         this.create3DLoadingIndicator();
-
+        this.loadModel(manager, modelUrl);
+    }
+    loadModel(manager, url) {
         const gltfLoader = new GLTFLoader(manager);
-
         gltfLoader.load(
-            modelUrl,
+            url,
             (gltf) => {
+                // Удаляем предыдущую модель, если есть
+                if (this.model && this.model.parent) {
+                    this.model.parent.remove(this.model);
+                }
+
                 this.model = gltf.scene;
                 this.normalizeModelSize();
                 console.log(this.dumpObject(this.model).join('\n'));
+                // Собираем все Object3D с именами
+                this.modelObjects = [];
+                this.model.traverse((child) => {
+                    if (child instanceof THREE.Object3D && child.name && child.type === "Object3D") {
+                        this.modelObjects.push({
+                            name: child.name,
+                            object: child
+                        });
+                    }
+                });
+
                 this.scene.add(this.model);
             },
-            // Индивидуальный прогресс для этого загрузчика не нужен,
-            // так как мы используем менеджер для отслеживания прогресса
             undefined,
             (error) => {
                 console.error("Ошибка загрузки модели:", error);
             }
         );
+    }
+    populateSelectWithObjects() {
+        const select = document.getElementById('modelObjectsSelect');
+        if (!select) return;
+
+        // Очищаем select
+        select.innerHTML = '<option value="">-- Select object --</option>';
+        
+        // Добавляем только Object3D с именами в select
+        this.modelObjects.forEach(obj => {
+            const option = document.createElement('option');
+            option.value = obj.name;
+            option.textContent = obj.name;
+            select.appendChild(option);
+        });
+
+        // Добавляем обработчик изменения выбора
+        select.addEventListener('change', (e) => {
+            const selectedObjectName = e.target.value;
+            this.highlightObjectByName(selectedObjectName);
+        });
+    }
+
+    highlightFirstObject() {
+        if (this.modelObjects.length > 0) {
+            this.highlightObjectByName(this.modelObjects[0].name);
+        }
+    }
+
+    highlightObjectByName(objectName) {
+        // Убираем подсветку с предыдущего объекта
+        if (this.currentHighlightedObject) {
+            this.resetObjectHighlight(this.currentHighlightedObject);
+            this.currentHighlightedObject = null;
+        }
+    
+        if (!objectName) return;
+    
+        // Находим точное соответствие имени объекта в иерархии
+        const selectedObject = this.findExactObjectByName(objectName);
+        if (!selectedObject) return;
+    
+        // Если это меш - подсвечиваем его
+        if (selectedObject.isMesh) {
+            this.highlightMesh(selectedObject);
+            this.currentHighlightedObject = selectedObject;
+        }
+        // Если это Object3D - ищем первый дочерний Mesh (рекурсивно)
+        else if (selectedObject instanceof THREE.Object3D) {
+            const mesh = this.findFirstMeshChildRecursive(selectedObject);
+            if (mesh) {
+                this.highlightMesh(mesh);
+                this.currentHighlightedObject = mesh;
+            }
+        }
+    }
+
+    highlightMesh(mesh) {
+        // // Сохраняем оригинальные параметры материала
+        // if (!mesh.userData.originalEmissive) {
+        //     mesh.userData.originalEmissive = mesh.material.emissive?.getHex() || 0x000000;
+        //     mesh.userData.originalEmissiveIntensity = mesh.material.emissiveIntensity || 0;
+        // }
+        // mesh.material = new THREE.MeshPhongMaterial({
+        //     color: mesh.material.color,
+        //     specular: 0xffffff, // Цвет бликов
+        //     shininess: 100, // Интенсивность бликов
+        // });
+        // mesh.material.needsUpdate = true;
+            // Сохраняем оригинальный материал, если еще не сохранили
+        if (!mesh.userData.originalMaterial) {
+            mesh.userData.originalMaterial = mesh.material;
+        }
+        
+        // Создаем новый материал для подсветки на основе оригинального
+        const highlightMaterial = new THREE.MeshPhongMaterial({
+            color: mesh.userData.originalMaterial.color,
+            specular: 0xffffff,
+            shininess: 100,
+            // Копируем другие важные свойства из оригинального материала
+            map: mesh.userData.originalMaterial.map,
+            transparent: mesh.userData.originalMaterial.transparent,
+            opacity: mesh.userData.originalMaterial.opacity,
+            // Добавляем emissive для эффекта подсветки
+            emissive: 0xFFA500, // Оранжевый цвет подсветки
+            emissiveIntensity: 0.5
+        });
+
+        // Применяем новый материал
+        mesh.material = highlightMaterial;
+        mesh.material.needsUpdate = true;
+    }
+    resetObjectHighlight(object) {
+        if (object.isMesh && object.userData.originalMaterial) {
+            // Восстанавливаем оригинальный материал
+            object.material = object.userData.originalMaterial;
+            object.material.needsUpdate = true;
+            
+            // Очищаем сохраненный материал (опционально)
+            delete object.userData.originalMaterial;
+        }
+    }
+    // Находит точное соответствие имени объекта в иерархии
+    findExactObjectByName(name) {
+        let foundObject = null;
+        this.model.traverse((child) => {
+            if (child.name === name) {
+                foundObject = child;
+            }
+        });
+        return foundObject;
+    }
+    findFirstMeshChildRecursive(object) {
+        if (object.isMesh) return object;
+        
+        for (let i = 0; i < object.children.length; i++) {
+            const child = object.children[i];
+            const mesh = this.findFirstMeshChildRecursive(child);
+            if (mesh) return mesh;
+        }
+        
+        return null;
     }
     normalizeModelSize() {
         if (!this.model) return;
@@ -137,7 +276,6 @@ class CanvasTride {
     }
     animate() {
         requestAnimationFrame(() => this.animate());
-
         this.controls.update();
         this.renderer.render(this.scene, this.camera);
     }
@@ -212,15 +350,6 @@ class CanvasTride {
         window.addEventListener('touchend', () => {
             this.isDragging = false;
         });
-    }
-    // Сброс положения модели
-    resetModelPosition() {
-        if (this.model) {
-            this.model.rotation.set(0, 0, 0);
-            this.scale = 1;
-            this.model.scale.set(1, 1, 1);
-            this.normalizeModelSize();
-        }
     }
 	dumpObject( obj, lines = [], isLast = true, prefix = '' ) {
 
@@ -297,14 +426,14 @@ class CanvasTride {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    if (!isMobileDevice()) {
-        const canvasContainer = document.querySelector('[canvas]');
-        if (canvasContainer) {
-            const canvas = new CanvasTride(canvasContainer);
-            canvas.init();
-        } else {
-            console.error("Элемент с атрибутом 'canvas' не найден");
-        }
+    // if (!isMobileDevice()) {
+    // }
+    const canvasContainer = document.querySelector('[canvas]');
+    if (canvasContainer) {
+        const canvas = new CanvasTride(canvasContainer);
+        canvas.init();
+    } else {
+        console.error("Элемент с атрибутом 'canvas' не найден");
     }
 });
 

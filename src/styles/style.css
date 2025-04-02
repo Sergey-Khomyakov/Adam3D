@@ -284,10 +284,6 @@ input[type="text"]:focus {
   justify-content: space-between;
 }
 
-.tw-gap-10 {
-  gap: 2.5rem;
-}
-
 .tw-gap-4 {
   gap: 1rem;
 }
@@ -464,11 +460,6 @@ input[type="text"]:focus {
 
 .\[vite\:html\] {
   vite: html;
-}
-
-.hover\:tw-bg-primary:hover {
-  --tw-bg-opacity: 1;
-  background-color: rgb(43 45 66 / var(--tw-bg-opacity, 1));
 }
 
 .hover\:tw-text-primary:hover {
